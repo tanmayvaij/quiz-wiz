@@ -10,7 +10,11 @@ import { FC, useEffect, useState } from "react";
 import { db } from "../firebaseConfig";
 import { useAuth } from "../providers/AuthProvider";
 import { InfinitySpin } from "react-loader-spinner";
-import Rating from "./Rating";
+import { Rating } from "../components";
+import { User } from "firebase/auth";
+import { Bounce, toast } from "react-toastify";
+import { toastConfig } from "../config/toastConfig";
+import { useNavigate } from "react-router-dom";
 
 interface QuizProps {
   question: string;
@@ -20,13 +24,15 @@ interface QuizProps {
   questionMadeBy: string;
 }
 
-const Quiz: FC<{ dataCollection: string; questionCollection: string }> = ({
-  dataCollection,
-  questionCollection,
-}) => {
+export const Quiz: FC<{
+  dataCollection: string;
+  questionCollection: string;
+}> = ({ dataCollection, questionCollection }) => {
   const { user } = useAuth();
 
-  const [quiz, setQuiz] = useState<QuizProps | DocumentData>();
+  const navigate = useNavigate();
+
+  const [quiz, setQuiz] = useState<QuizProps | DocumentData | null>();
   const [userResponse, setUserResponse] = useState<DocumentData>();
   const [isQuizAnswered, setIsQuizAnswered] = useState<boolean>();
   const [quizRating, setQuizRating] = useState(0);
@@ -41,7 +47,7 @@ const Quiz: FC<{ dataCollection: string; questionCollection: string }> = ({
   const isQuestionAnsweredQuery = query(
     collection(db, dataCollection),
     where("date", "==", date),
-    where("user", "==", user?.email)
+    where("user", "==", (user as User)?.email)
   );
 
   useEffect(() => {
@@ -56,9 +62,13 @@ const Quiz: FC<{ dataCollection: string; questionCollection: string }> = ({
           setIsQuizAnswered(true);
         }
 
-        querySnapShot2.forEach((doc) => {
-          setQuiz(doc.data());
-        });
+        if (querySnapShot2.empty) {
+          setQuiz(null);
+        } else {
+          querySnapShot2.forEach((doc) => {
+            setQuiz(doc.data());
+          });
+        }
       })
       .catch((err) => {
         console.log(err);
@@ -69,28 +79,62 @@ const Quiz: FC<{ dataCollection: string; questionCollection: string }> = ({
 
   const submitAnswer = () => {
     if (userAnswer !== "" && quizRating !== 0)
-      addDoc(collection(db, dataCollection), {
-        user: user?.email,
-        questionId: quiz?.questionId,
-        userAnswer,
-        isAnswerCorrect: userAnswer === quiz?.answer,
-        date,
-        quizRating,
-      })
-        .then(() => {
-          alert("Answer submitted");
-          location.reload();
-        })
-        .catch((err) => {
-          console.log(err);
-        });
+      toast.promise(
+        Promise.all([
+          addDoc(collection(db, dataCollection), {
+            user: (user as User)?.email,
+            questionId: quiz?.questionId,
+            userAnswer,
+            isAnswerCorrect: userAnswer === quiz?.answer,
+            date,
+            quizRating,
+          }),
+          addDoc(collection(db, user?.email!), {
+            questionId: quiz?.questionId,
+            question: quiz?.question,
+            userAnswer,
+            isAnswerCorrect: userAnswer === quiz?.answer,
+            date,
+            quizRating,
+          }),
+        ]),
+        {
+          pending: "Please Wait",
+          success: {
+            render() {
+              navigate("/");
+              return "Answer submitted successfully";
+            },
+          },
+          error: {
+            render({ data }: { data: { message: string } }) {
+              return data?.message;
+            },
+          },
+        },
+        toastConfig
+      );
     else {
-      alert("Answer the quiz and rate it to submit");
+      toast.error("Please rate and answer the quiz to submit it", {
+        position: "top-center",
+        autoClose: 2000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
     }
   };
 
-  if (!quiz) {
+  if (quiz === undefined) {
     return <InfinitySpin width="200" color="#4fa94d" />;
+  }
+
+  if (quiz === null) {
+    return <h2>No quiz for today</h2>;
   }
 
   return (
@@ -115,18 +159,31 @@ const Quiz: FC<{ dataCollection: string; questionCollection: string }> = ({
 
       <div className="py-10">
         {isQuizAnswered ? (
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col">
-              <span>Your Answer: {userResponse?.userAnswer}</span>
-              <span>Correct answer: {quiz?.answer}</span>
+          <div className="flex flex-col flex-wrap justify-center items-center rounded-lg px-6 py-4">
+            <div className="flex items-center justify-center flex-col">
+              <p className="font-bold pb-2">
+                Your Answer: {userResponse?.userAnswer}
+              </p>
+              <p className="font-bold pb-2">Correct answer: {quiz?.answer}</p>
             </div>
-            <span>Question By:- {quiz.questionMadeBy}</span>
+
+            <span className="text-sm pt-5">
+              Question By:- {quiz.questionMadeBy}
+            </span>
           </div>
         ) : (
           <div className="flex items-center justify-center flex-col space-y-10">
-            <div className="flex items-center space-x-20">
-              <Rating quizRating={quizRating} setQuizRating={setQuizRating} />
-              <span>Question By:- {quiz.questionMadeBy}</span>
+            <div className="flex flex-col flex-wrap justify-center items-center border rounded-lg px-6 py-4">
+              <div className="flex items-center justify-center flex-col">
+                <p className="font-bold pb-2">
+                  🙏 Please rate the above question
+                </p>
+                <Rating quizRating={quizRating} setQuizRating={setQuizRating} />
+              </div>
+
+              <span className="text-sm pt-5">
+                Question By:- {quiz.questionMadeBy}
+              </span>
             </div>
             <button
               onClick={submitAnswer}
@@ -140,5 +197,3 @@ const Quiz: FC<{ dataCollection: string; questionCollection: string }> = ({
     </div>
   );
 };
-
-export default Quiz;

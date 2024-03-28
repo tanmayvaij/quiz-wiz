@@ -6,7 +6,7 @@ interface RatingProps {
   setQuizRating: React.Dispatch<React.SetStateAction<number>>;
 }
 
-const Rating: FC<RatingProps> = ({ quizRating, setQuizRating }) => {
+export const Rating: FC<RatingProps> = ({ quizRating, setQuizRating }) => {
   const ratingArr = new Array(5).fill(null);
   return (
     <div className="flex space-x-1">
@@ -24,5 +24,3 @@ const Rating: FC<RatingProps> = ({ quizRating, setQuizRating }) => {
     </div>
   );
 };
-
-export default Rating;
